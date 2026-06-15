@@ -1,0 +1,12 @@
+{
+    "display_name": "Agent 工作区悬浮查看器",
+    "loading_order": 60,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "三联装381炮",
+    "version": "0.1.0",
+    "description": "以悬浮球和可拖拽面板查看 TauriTavern Agent 工作区文档。",
+    "homePage": "https://github.com/bayuefeiyu/agent-workspace-float"
+}
