@@ -1,12 +1,12 @@
 {
-    "display_name": "Agent 工作区悬浮查看器",
+    "display_name": "Agent \u5de5\u4f5c\u533a\u60ac\u6d6e\u67e5\u770b\u5668",
     "loading_order": 60,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "author": "三联装381炮",
+    "author": "bayuefeiyu",
     "version": "0.1.0",
-    "description": "以悬浮球和可拖拽面板查看 TauriTavern Agent 工作区文档。",
+    "description": "\u4ee5\u60ac\u6d6e\u7403\u548c\u53ef\u62d6\u62fd\u9762\u677f\u67e5\u770b TauriTavern Agent \u5de5\u4f5c\u533a\u6587\u6863\u3002",
     "homePage": "https://github.com/bayuefeiyu/agent-workspace-float"
 }

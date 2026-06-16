@@ -558,9 +558,10 @@ function installDrag(target, handle, key) {
     }
 
     handle.addEventListener('pointerdown', (event) => {
-        if (event.button !== 0 || isInteractiveDragTarget(event.target)) {
+        if (event.button !== 0 || (handle !== target && isInteractiveDragTarget(event.target))) {
             return;
         }
+        event.preventDefault();
         const rect = target.getBoundingClientRect();
         const startX = event.clientX;
         const startY = event.clientY;
