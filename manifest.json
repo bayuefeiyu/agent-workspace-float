@@ -5,8 +5,9 @@
     "optional": [],
     "js": "index.js",
     "css": "style.css",
+    "generate_interceptor": "agentWorkspaceFloatPreAgentInterceptor",
     "author": "bayuefeiyu",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "description": "\u4ee5\u60ac\u6d6e\u7403\u548c\u53ef\u62d6\u62fd\u9762\u677f\u67e5\u770b TauriTavern Agent \u5de5\u4f5c\u533a\u6587\u6863\u3002",
     "homePage": "https://github.com/bayuefeiyu/agent-workspace-float"
 }

@@ -23,6 +23,11 @@
     cursor: grabbing;
 }
 
+.ttaw-bubble.is-workflow-busy {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--SmartThemeQuoteColor, #7aa7ff) 54%, transparent),
+        0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
 .ttaw-bubble i {
     font-size: 20px;
 }
@@ -107,7 +112,7 @@
 
 .ttaw-tabs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.14));
 }
 
@@ -136,6 +141,99 @@
 .ttaw-tab-panel[data-ttaw-panel="settings"] {
     overflow-y: auto;
     padding-bottom: 12px;
+}
+
+.ttaw-tab-panel[data-ttaw-panel="status"],
+.ttaw-tab-panel[data-ttaw-panel="pre-agent"] {
+    overflow-y: auto;
+}
+
+.ttaw-run-status {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: 14px;
+}
+
+.ttaw-run-status h4,
+.ttaw-post-agent-settings > h4 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.ttaw-run-status dl {
+    margin: 0;
+    display: grid;
+}
+
+.ttaw-run-status dl > div {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(90px, 34%) minmax(0, 1fr);
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ttaw-run-status dt {
+    opacity: 0.72;
+}
+
+.ttaw-run-status dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.ttaw-stop-button {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+    border: 1px solid #f06a6a;
+    background: #b72f36;
+    color: #fff;
+    font-weight: 700;
+}
+
+.ttaw-stop-button:hover:not(:disabled) {
+    background: #d03a42;
+}
+
+.ttaw-stop-button:disabled {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.08);
+    color: inherit;
+    opacity: 0.5;
+}
+
+.ttaw-post-agent-settings {
+    display: grid;
+    gap: 12px;
+    padding: 16px 14px 18px;
+    border-top: 3px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.24));
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.ttaw-post-agent-settings > .ttaw-output-documents {
+    padding: 12px 0 0;
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+}
+
+.ttaw-post-agent-flags {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+}
+
+.ttaw-post-agent-flags .checkbox_label {
+    min-width: 0;
+    margin: 0;
+}
+
+.ttaw-pre-agent-flags {
+    grid-template-columns: 1fr;
 }
 
 .ttaw-toolbar {
@@ -285,18 +383,21 @@
 }
 
 .ttaw-root-filter,
-.ttaw-custom-paths {
+.ttaw-custom-paths,
+.ttaw-output-documents {
     padding: 0 14px 14px;
 }
 
 .ttaw-root-filter h4,
-.ttaw-custom-paths h4 {
+.ttaw-custom-paths h4,
+.ttaw-output-documents h4 {
     margin: 8px 0 4px;
     font-size: 14px;
 }
 
 .ttaw-root-filter p,
-.ttaw-custom-paths p {
+.ttaw-custom-paths p,
+.ttaw-output-documents p {
     margin: 0 0 10px;
     opacity: 0.72;
     line-height: 1.45;
@@ -342,7 +443,18 @@
     min-width: 0;
 }
 
-.ttaw-custom-paths select {
+.ttaw-output-document-form {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) auto;
+    gap: 8px;
+}
+
+.ttaw-output-document-form input {
+    min-width: 0;
+}
+
+.ttaw-custom-paths select,
+.ttaw-output-documents select {
     width: 100%;
     min-height: 120px;
     margin-top: 8px;
@@ -353,8 +465,41 @@
     color: inherit;
 }
 
-.ttaw-custom-paths > .menu_button {
+.ttaw-custom-paths > .menu_button,
+.ttaw-output-documents > .menu_button {
     margin-top: 8px;
+}
+
+.ttaw-extension-field {
+    display: grid;
+    gap: 6px;
+}
+
+.ttaw-extension-field select {
+    width: 100%;
+    min-width: 0;
+}
+
+.ttaw-presentation-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.ttaw-presentation-options label {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.14));
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.ttaw-presentation-options label:has(input:checked) {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, #7aa7ff) 20%, transparent);
 }
 
 @media (max-width: 520px) {
@@ -372,5 +517,14 @@
     .ttaw-file-list {
         border-right: 0;
         border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+    }
+
+    .ttaw-output-document-form {
+        grid-template-columns: 1fr;
+    }
+
+    .ttaw-output-document-form .menu_button {
+        width: 100%;
+        justify-content: center;
     }
 }
