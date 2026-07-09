@@ -214,7 +214,8 @@
     background: rgba(255, 255, 255, 0.025);
 }
 
-.ttaw-post-agent-settings > .ttaw-output-documents {
+.ttaw-post-agent-settings > .ttaw-output-documents,
+.ttaw-post-agent-settings > .ttaw-world-info-storage {
     padding: 12px 0 0;
     border-top: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
 }
@@ -233,7 +234,7 @@
 }
 
 .ttaw-pre-agent-flags {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .ttaw-toolbar {
@@ -384,20 +385,23 @@
 
 .ttaw-root-filter,
 .ttaw-custom-paths,
-.ttaw-output-documents {
+.ttaw-output-documents,
+.ttaw-world-info-storage {
     padding: 0 14px 14px;
 }
 
 .ttaw-root-filter h4,
 .ttaw-custom-paths h4,
-.ttaw-output-documents h4 {
+.ttaw-output-documents h4,
+.ttaw-world-info-storage h4 {
     margin: 8px 0 4px;
     font-size: 14px;
 }
 
 .ttaw-root-filter p,
 .ttaw-custom-paths p,
-.ttaw-output-documents p {
+.ttaw-output-documents p,
+.ttaw-world-info-storage p {
     margin: 0 0 10px;
     opacity: 0.72;
     line-height: 1.45;

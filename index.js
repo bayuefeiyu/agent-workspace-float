@@ -15,10 +15,23 @@ import {
     getContext,
 } from '/scripts/extensions.js';
 import {
+    POPUP_RESULT,
+    Popup,
+} from '/scripts/popup.js';
+import {
     deleteLastMessage,
     markWindowedChatDirtyFromIndex,
     sendTextareaMessage,
 } from '/script.js';
+import {
+    createWorldInfoEntry,
+    loadWorldInfo,
+    newWorldInfoEntryDefinition,
+    reloadEditor,
+    saveWorldInfo,
+    updateWorldInfoList,
+    world_names,
+} from '/scripts/world-info.js';
 
 const MODULE_NAME = 'agent-workspace-float';
 const SETTINGS_KEY = 'settings';
@@ -29,6 +42,9 @@ const MIN_PANEL_HEIGHT = 360;
 const CUSTOM_ROOT_ID = '__custom__';
 const BUBBLE_CLICK_DELAY_MS = 240;
 const PRE_AGENT_INTERCEPTOR_KEY = 'agentWorkspaceFloatPreAgentInterceptor';
+const BUBBLE_LONG_PRESS_MS = 650;
+const DEFAULT_WORLD_INFO_PARAMS_PATH = 'scratch/worldinfo_create.jsonl';
+const DEFAULT_WORLD_INFO_RETENTION_LAYERS = 10;
 const TERMINAL_RUN_EVENTS = new Set(['run_completed', 'run_partial_success', 'run_cancelled', 'run_failed']);
 const TERMINAL_INVOCATION_EVENTS = new Set([
     'agent_invocation_completed',
@@ -81,6 +97,11 @@ const TEXT = Object.freeze({
     postAgentAutomatic: '\u81ea\u52a8',
     preAgentSettings: '\u524d\u7f6e Agent \u8bbe\u7f6e',
     preAgentEnabled: '\u542f\u52a8',
+    preAgentAutomatic: '\u81ea\u52a8',
+    shortcut: '\u5feb\u6377\u952e',
+    shortcutDoubleClick: '\u53cc\u51fb',
+    shortcutRightClick: '\u53f3\u51fb',
+    shortcutLongPress: '\u957f\u6309',
     presentation: '\u8fd0\u884c\u65b9\u5f0f',
     foreground: '\u524d\u53f0',
     background: '\u540e\u53f0',
@@ -112,6 +133,23 @@ const TEXT = Object.freeze({
     outputAppendFailed: '\u8f93\u51fa\u6587\u6863\u8ffd\u52a0\u5931\u8d25\u3002',
     preAgentResumeFailed: '\u524d\u7f6e Agent \u5b8c\u6210\uff0c\u4f46\u7528\u6237\u6d88\u606f\u53d1\u9001\u5931\u8d25\u3002',
     preAgentMessageChanged: '\u524d\u7f6e Agent \u8fd0\u884c\u671f\u95f4\u804a\u5929\u5df2\u53d8\u66f4\uff0c\u672a\u81ea\u52a8\u53d1\u9001\u62e6\u622a\u7684\u6d88\u606f\u3002',
+    preAgentMessageRequired: '\u8bf7\u5148\u5728\u8f93\u5165\u6846\u4e2d\u8f93\u5165\u8981\u53d1\u9001\u7684\u6d88\u606f\u3002',
+    worldInfoStorageTitle: '\u4e16\u754c\u4e66\u5b58\u50a8',
+    worldInfoStorageHelp: '\u540e\u7f6e Agent run \u7ed3\u675f\u540e\uff0c\u4ece\u5de5\u4f5c\u533a\u8bfb\u53d6 JSONL \u53c2\u6570\u6587\u4ef6\uff0c\u5e76\u5c06\u6587\u6863\u5185\u5bb9\u5199\u5165\u6240\u9009\u4e16\u754c\u4e66\u3002',
+    worldInfoStorageEnabled: '\u542f\u7528',
+    worldInfoBook: '\u4e16\u754c\u4e66',
+    noWorldInfoBooks: '\u6ca1\u6709\u53ef\u7528\u7684\u4e16\u754c\u4e66',
+    worldInfoParamsPath: '\u53c2\u6570\u6587\u4ef6\u8def\u5f84',
+    worldInfoRetentionLayers: '\u4fdd\u7559\u5c42\u6570',
+    worldInfoBookRequired: '\u8bf7\u5148\u9009\u62e9\u4e16\u754c\u4e66\u3002',
+    worldInfoStored: '\u5df2\u5199\u5165\u4e16\u754c\u4e66\u6761\u76ee',
+    worldInfoStoreFailed: '\u4e16\u754c\u4e66\u5b58\u50a8\u5931\u8d25\u3002',
+    worldInfoCleanupTitle: '\u4e16\u754c\u4e66\u8bb0\u5f55\u6e05\u7406',
+    worldInfoCleanupConfirm: '\u672c\u6b21\u6e05\u7406\u5c06\u5220\u9664\u8d85\u8fc7 5 \u6761\u53ef\u8bc6\u522b\u8bb0\u5f55\u3002\u4f60\u53ef\u4ee5\u76f4\u63a5\u5220\u9664\uff0c\u6216\u5148\u5907\u4efd\u5f53\u524d\u4e16\u754c\u4e66\u540e\u518d\u5220\u9664\u3002',
+    worldInfoCleanupDirect: '\u76f4\u63a5\u5220\u9664',
+    worldInfoCleanupBackup: '\u5907\u4efd\u540e\u5220\u9664',
+    worldInfoCleanupCancel: '\u53d6\u6d88',
+    worldInfoBackupCreated: '\u5df2\u5907\u4efd\u4e16\u754c\u4e66',
 });
 
 const WORKSPACE_ROOTS = Object.freeze([
@@ -146,14 +184,21 @@ const WORKSPACE_ROOT_IDS = new Set(WORKSPACE_ROOTS.map((root) => root.id));
 const DEFAULT_SETTINGS = Object.freeze({
     bubbleEnabled: true,
     preAgentEnabled: false,
+    preAgentAutomatic: false,
+    preAgentShortcut: 'long_press',
     preAgentPresentation: 'background',
     preAgentProfileId: '',
     preAgentOutputDocuments: [],
     selectedPreAgentOutputDocumentKey: '',
     postAgentEnabled: true,
     postAgentAutomatic: false,
+    postAgentShortcut: 'double_click',
     postAgentPresentation: 'background',
     postAgentProfileId: '',
+    worldInfoStorageEnabled: false,
+    worldInfoBookName: '',
+    worldInfoParamsPath: DEFAULT_WORLD_INFO_PARAMS_PATH,
+    worldInfoRetentionLayers: DEFAULT_WORLD_INFO_RETENTION_LAYERS,
     fontSize: 14,
     visibleRoots: ['output', 'scratch', 'plan', 'summaries', 'persist'],
     collapsedRoots: [],
@@ -182,6 +227,9 @@ const state = {
     preAgentLastEventType: '',
     preAgentChat: null,
     preAgentOriginalMessage: '',
+    preAgentAutoSend: false,
+    preAgentPersistTargetMessageId: null,
+    preAgentPersistWritePromise: Promise.resolve(),
     preAgentActiveInvocations: new Map(),
     preAgentUnsubscribe: null,
     workflowStarting: false,
@@ -194,10 +242,14 @@ const state = {
     workflowProfileId: '',
     workflowPresentation: '',
     workflowLastEventType: '',
+    workflowChat: null,
+    workflowPersistTargetMessageId: null,
+    workflowPersistWritePromise: Promise.resolve(),
     workflowActiveInvocations: new Map(),
     workflowOutputHandledInvocations: new Set(),
     workflowOutputQueue: Promise.resolve(),
     workflowUnsubscribe: null,
+    worldInfoNames: [],
     activeRunId: '',
     currentRun: null,
     events: [],
@@ -230,12 +282,19 @@ let preOutputPathInput = null;
 let preOutputDocumentSelect = null;
 let bubbleEnabledInput = null;
 let preAgentEnabledInput = null;
+let preAgentAutomaticInput = null;
+let preAgentShortcutSelect = null;
 let preAgentProfileSelect = null;
 let preAgentPresentationInputs = [];
 let postAgentEnabledInput = null;
 let postAgentAutomaticInput = null;
+let postAgentShortcutSelect = null;
 let postAgentProfileSelect = null;
 let postAgentPresentationInputs = [];
+let worldInfoStorageEnabledInput = null;
+let worldInfoBookSelect = null;
+let worldInfoParamsPathInput = null;
+let worldInfoRetentionLayersInput = null;
 let bubbleClickTimer = null;
 let tabs = [];
 let tabPanels = [];
@@ -324,6 +383,19 @@ function sanitizeOutputDocuments(value) {
     return output;
 }
 
+function sanitizeBubbleShortcut(value, fallback) {
+    return ['double_click', 'right_click', 'long_press'].includes(value)
+        ? value
+        : fallback;
+}
+
+function sanitizeNonNegativeInteger(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0
+        ? Math.floor(number)
+        : fallback;
+}
+
 function cloneSettings(value) {
     const customPaths = sanitizePathList(value?.customPaths);
     const selectedCustomPath = normalizeWorkspacePath(value?.selectedCustomPath);
@@ -346,6 +418,10 @@ function cloneSettings(value) {
         preAgentEnabled: typeof value?.preAgentEnabled === 'boolean'
             ? value.preAgentEnabled
             : DEFAULT_SETTINGS.preAgentEnabled,
+        preAgentAutomatic: typeof value?.preAgentAutomatic === 'boolean'
+            ? value.preAgentAutomatic
+            : DEFAULT_SETTINGS.preAgentAutomatic,
+        preAgentShortcut: sanitizeBubbleShortcut(value?.preAgentShortcut, DEFAULT_SETTINGS.preAgentShortcut),
         preAgentPresentation,
         preAgentProfileId: String(value?.preAgentProfileId || '').trim(),
         preAgentOutputDocuments,
@@ -358,8 +434,18 @@ function cloneSettings(value) {
         postAgentAutomatic: typeof value?.postAgentAutomatic === 'boolean'
             ? value.postAgentAutomatic
             : DEFAULT_SETTINGS.postAgentAutomatic,
+        postAgentShortcut: sanitizeBubbleShortcut(value?.postAgentShortcut, DEFAULT_SETTINGS.postAgentShortcut),
         postAgentPresentation,
         postAgentProfileId: String(value?.postAgentProfileId || '').trim(),
+        worldInfoStorageEnabled: typeof value?.worldInfoStorageEnabled === 'boolean'
+            ? value.worldInfoStorageEnabled
+            : DEFAULT_SETTINGS.worldInfoStorageEnabled,
+        worldInfoBookName: String(value?.worldInfoBookName || '').trim(),
+        worldInfoParamsPath: normalizeWorkspacePath(value?.worldInfoParamsPath || DEFAULT_SETTINGS.worldInfoParamsPath),
+        worldInfoRetentionLayers: sanitizeNonNegativeInteger(
+            value?.worldInfoRetentionLayers,
+            DEFAULT_SETTINGS.worldInfoRetentionLayers,
+        ),
         visibleRoots: sanitizeRootList(value?.visibleRoots, DEFAULT_SETTINGS.visibleRoots),
         collapsedRoots: sanitizeRootList(value?.collapsedRoots, DEFAULT_SETTINGS.collapsedRoots),
         customPaths,
@@ -488,6 +574,55 @@ function renderAgentProfileOptions() {
     populateAgentProfileSelect(preAgentProfileSelect, state.settings.preAgentProfileId);
 }
 
+async function refreshWorldInfoNames() {
+    try {
+        await updateWorldInfoList();
+    } catch (error) {
+        console.warn('[AgentWorkspaceFloat] Failed to refresh World Info list:', error);
+    }
+    const contextNames = getContext()?.getWorldInfoNames?.();
+    state.worldInfoNames = (Array.isArray(world_names) && world_names.length > 0
+        ? world_names
+        : (Array.isArray(contextNames) ? contextNames : []))
+        .map((name) => String(name || '').trim())
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right));
+    renderWorldInfoOptions();
+}
+
+function renderWorldInfoOptions() {
+    if (!(worldInfoBookSelect instanceof HTMLSelectElement)) {
+        return;
+    }
+    worldInfoBookSelect.replaceChildren();
+    if (state.worldInfoNames.length === 0) {
+        const option = createElement('option', {
+            text: TEXT.noWorldInfoBooks,
+            attrs: { value: '', disabled: 'disabled' },
+        });
+        option.selected = true;
+        worldInfoBookSelect.append(option);
+        worldInfoBookSelect.disabled = true;
+        return;
+    }
+
+    worldInfoBookSelect.disabled = false;
+    const emptyOption = createElement('option', {
+        text: TEXT.none,
+        attrs: { value: '' },
+    });
+    emptyOption.selected = !state.settings.worldInfoBookName;
+    worldInfoBookSelect.append(emptyOption);
+    for (const name of state.worldInfoNames) {
+        const option = createElement('option', {
+            text: name,
+            attrs: { value: name },
+        });
+        option.selected = name === state.settings.worldInfoBookName;
+        worldInfoBookSelect.append(option);
+    }
+}
+
 function populateAgentProfileSelect(select, selectedProfileId) {
     if (!(select instanceof HTMLSelectElement)) {
         return;
@@ -527,14 +662,36 @@ function syncExtensionSettings() {
     if (postAgentAutomaticInput) {
         postAgentAutomaticInput.checked = Boolean(state.settings.postAgentAutomatic);
     }
+    if (postAgentShortcutSelect && postAgentShortcutSelect.value !== state.settings.postAgentShortcut) {
+        postAgentShortcutSelect.value = state.settings.postAgentShortcut;
+    }
     postAgentPresentationInputs.forEach((input) => {
         input.checked = input.value === state.settings.postAgentPresentation;
     });
     if (postAgentProfileSelect && postAgentProfileSelect.value !== state.settings.postAgentProfileId) {
         postAgentProfileSelect.value = state.settings.postAgentProfileId;
     }
+    if (worldInfoStorageEnabledInput) {
+        worldInfoStorageEnabledInput.checked = Boolean(state.settings.worldInfoStorageEnabled);
+    }
+    if (worldInfoBookSelect && worldInfoBookSelect.value !== state.settings.worldInfoBookName) {
+        worldInfoBookSelect.value = state.settings.worldInfoBookName;
+    }
+    if (worldInfoParamsPathInput && worldInfoParamsPathInput.value !== state.settings.worldInfoParamsPath) {
+        worldInfoParamsPathInput.value = state.settings.worldInfoParamsPath;
+    }
+    if (worldInfoRetentionLayersInput
+        && worldInfoRetentionLayersInput.value !== String(state.settings.worldInfoRetentionLayers)) {
+        worldInfoRetentionLayersInput.value = String(state.settings.worldInfoRetentionLayers);
+    }
     if (preAgentEnabledInput) {
         preAgentEnabledInput.checked = Boolean(state.settings.preAgentEnabled);
+    }
+    if (preAgentAutomaticInput) {
+        preAgentAutomaticInput.checked = Boolean(state.settings.preAgentAutomatic);
+    }
+    if (preAgentShortcutSelect && preAgentShortcutSelect.value !== state.settings.preAgentShortcut) {
+        preAgentShortcutSelect.value = state.settings.preAgentShortcut;
     }
     preAgentPresentationInputs.forEach((input) => {
         input.checked = input.value === state.settings.preAgentPresentation;
@@ -639,7 +796,19 @@ function mountDom() {
                         <input type="checkbox" data-ttaw-pre-agent-enabled>
                         <span>${TEXT.preAgentEnabled}</span>
                     </label>
+                    <label class="checkbox_label">
+                        <input type="checkbox" data-ttaw-pre-agent-automatic>
+                        <span>${TEXT.preAgentAutomatic}</span>
+                    </label>
                 </div>
+                <label class="ttaw-extension-field" for="ttaw-pre-agent-shortcut">
+                    <span>${TEXT.shortcut}</span>
+                    <select id="ttaw-pre-agent-shortcut" class="text_pole" data-ttaw-pre-agent-shortcut>
+                        <option value="double_click">${TEXT.shortcutDoubleClick}</option>
+                        <option value="right_click">${TEXT.shortcutRightClick}</option>
+                        <option value="long_press">${TEXT.shortcutLongPress}</option>
+                    </select>
+                </label>
                 <div class="ttaw-extension-field">
                     <span>${TEXT.presentation}</span>
                     <div class="ttaw-presentation-options">
@@ -718,6 +887,14 @@ function mountDom() {
                         <span>${TEXT.postAgentAutomatic}</span>
                     </label>
                 </div>
+                <label class="ttaw-extension-field" for="ttaw-post-agent-shortcut">
+                    <span>${TEXT.shortcut}</span>
+                    <select id="ttaw-post-agent-shortcut" class="text_pole" data-ttaw-post-agent-shortcut>
+                        <option value="double_click">${TEXT.shortcutDoubleClick}</option>
+                        <option value="right_click">${TEXT.shortcutRightClick}</option>
+                        <option value="long_press">${TEXT.shortcutLongPress}</option>
+                    </select>
+                </label>
                 <div class="ttaw-extension-field">
                     <span>${TEXT.presentation}</span>
                     <div class="ttaw-presentation-options">
@@ -751,6 +928,26 @@ function mountDom() {
                         <i class="fa-solid fa-minus" aria-hidden="true"></i>
                         <span>${TEXT.remove}</span>
                     </button>
+                </section>
+                <section class="ttaw-world-info-storage">
+                    <h4>${TEXT.worldInfoStorageTitle}</h4>
+                    <p>${TEXT.worldInfoStorageHelp}</p>
+                    <label class="checkbox_label">
+                        <input type="checkbox" data-ttaw-world-info-storage-enabled>
+                        <span>${TEXT.worldInfoStorageEnabled}</span>
+                    </label>
+                    <label class="ttaw-extension-field" for="ttaw-world-info-book">
+                        <span>${TEXT.worldInfoBook}</span>
+                        <select id="ttaw-world-info-book" class="text_pole" data-ttaw-world-info-book></select>
+                    </label>
+                    <label class="ttaw-extension-field" for="ttaw-world-info-params-path">
+                        <span>${TEXT.worldInfoParamsPath}</span>
+                        <input id="ttaw-world-info-params-path" type="text" class="text_pole" data-ttaw-world-info-params-path placeholder="${DEFAULT_WORLD_INFO_PARAMS_PATH}">
+                    </label>
+                    <label class="ttaw-extension-field" for="ttaw-world-info-retention-layers">
+                        <span>${TEXT.worldInfoRetentionLayers}</span>
+                        <input id="ttaw-world-info-retention-layers" type="number" class="text_pole" min="0" step="1" data-ttaw-world-info-retention-layers>
+                    </label>
                 </section>
             </section>
         </div>
@@ -801,19 +998,27 @@ function mountDom() {
     preOutputPathInput = panel.querySelector('[data-ttaw-pre-output-path]');
     preOutputDocumentSelect = panel.querySelector('[data-ttaw-pre-output-list]');
     preAgentEnabledInput = panel.querySelector('[data-ttaw-pre-agent-enabled]');
+    preAgentAutomaticInput = panel.querySelector('[data-ttaw-pre-agent-automatic]');
+    preAgentShortcutSelect = panel.querySelector('[data-ttaw-pre-agent-shortcut]');
     preAgentProfileSelect = panel.querySelector('[data-ttaw-pre-agent-profile]');
     preAgentPresentationInputs = Array.from(panel.querySelectorAll('[data-ttaw-pre-agent-presentation]'));
     postAgentEnabledInput = panel.querySelector('[data-ttaw-post-agent-enabled]');
     postAgentAutomaticInput = panel.querySelector('[data-ttaw-post-agent-automatic]');
+    postAgentShortcutSelect = panel.querySelector('[data-ttaw-post-agent-shortcut]');
     postAgentProfileSelect = panel.querySelector('[data-ttaw-post-agent-profile]');
     postAgentPresentationInputs = Array.from(panel.querySelectorAll('[data-ttaw-post-agent-presentation]'));
+    worldInfoStorageEnabledInput = panel.querySelector('[data-ttaw-world-info-storage-enabled]');
+    worldInfoBookSelect = panel.querySelector('[data-ttaw-world-info-book]');
+    worldInfoParamsPathInput = panel.querySelector('[data-ttaw-world-info-params-path]');
+    worldInfoRetentionLayersInput = panel.querySelector('[data-ttaw-world-info-retention-layers]');
     tabs = Array.from(panel.querySelectorAll('[data-ttaw-tab]'));
     tabPanels = Array.from(panel.querySelectorAll('[data-ttaw-panel]'));
 
     bubble.addEventListener('click', (event) => {
-        if (bubble.dataset.dragged === '1') {
+        if (bubble.dataset.dragged === '1' || bubble.dataset.longPressed === '1') {
             event.preventDefault();
             bubble.dataset.dragged = '0';
+            bubble.dataset.longPressed = '0';
             clearTimeout(bubbleClickTimer);
             bubbleClickTimer = null;
             return;
@@ -825,6 +1030,7 @@ function mountDom() {
             render();
             if (state.open) {
                 void refreshWorkspace();
+                void refreshWorldInfoNames();
             }
         }, BUBBLE_CLICK_DELAY_MS);
     });
@@ -837,8 +1043,20 @@ function mountDom() {
             bubble.dataset.dragged = '0';
             return;
         }
-        void startPostAgentWorkflow();
+        void triggerBubbleShortcut('double_click');
     });
+    bubble.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        clearTimeout(bubbleClickTimer);
+        bubbleClickTimer = null;
+        if (bubble.dataset.dragged === '1') {
+            bubble.dataset.dragged = '0';
+            return;
+        }
+        void triggerBubbleShortcut('right_click');
+    });
+    installBubbleLongPress();
 
     const closeButton = panel.querySelector('[data-ttaw-close]');
     closeButton?.addEventListener('pointerdown', (event) => {
@@ -863,6 +1081,12 @@ function mountDom() {
     preAgentEnabledInput?.addEventListener('input', () => {
         void saveSettings({ preAgentEnabled: preAgentEnabledInput.checked });
     });
+    preAgentAutomaticInput?.addEventListener('input', () => {
+        void saveSettings({ preAgentAutomatic: preAgentAutomaticInput.checked });
+    });
+    preAgentShortcutSelect?.addEventListener('change', () => {
+        void saveSettings({ preAgentShortcut: preAgentShortcutSelect.value });
+    });
     preAgentProfileSelect?.addEventListener('change', () => {
         void saveSettings({ preAgentProfileId: String(preAgentProfileSelect.value || '').trim() });
     });
@@ -879,8 +1103,28 @@ function mountDom() {
     postAgentAutomaticInput?.addEventListener('input', () => {
         void saveSettings({ postAgentAutomatic: postAgentAutomaticInput.checked });
     });
+    postAgentShortcutSelect?.addEventListener('change', () => {
+        void saveSettings({ postAgentShortcut: postAgentShortcutSelect.value });
+    });
     postAgentProfileSelect?.addEventListener('change', () => {
         void saveSettings({ postAgentProfileId: String(postAgentProfileSelect.value || '').trim() });
+    });
+    worldInfoStorageEnabledInput?.addEventListener('input', () => {
+        void saveSettings({ worldInfoStorageEnabled: worldInfoStorageEnabledInput.checked });
+    });
+    worldInfoBookSelect?.addEventListener('change', () => {
+        void saveSettings({ worldInfoBookName: String(worldInfoBookSelect.value || '').trim() });
+    });
+    worldInfoParamsPathInput?.addEventListener('change', () => {
+        const path = normalizeWorkspacePath(worldInfoParamsPathInput.value || DEFAULT_WORLD_INFO_PARAMS_PATH);
+        void saveSettings({ worldInfoParamsPath: path || DEFAULT_WORLD_INFO_PARAMS_PATH });
+    });
+    worldInfoRetentionLayersInput?.addEventListener('change', () => {
+        const value = sanitizeNonNegativeInteger(
+            worldInfoRetentionLayersInput.value,
+            DEFAULT_WORLD_INFO_RETENTION_LAYERS,
+        );
+        void saveSettings({ worldInfoRetentionLayers: value });
     });
     postAgentPresentationInputs.forEach((input) => {
         input.addEventListener('change', () => {
@@ -1316,6 +1560,100 @@ function installResize(target, handle) {
     });
 }
 
+function installBubbleLongPress() {
+    let longPressTimer = null;
+    const clearLongPress = () => {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+    };
+
+    bubble.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) {
+            return;
+        }
+        const startX = event.clientX;
+        const startY = event.clientY;
+        clearLongPress();
+
+        const cleanup = () => {
+            clearLongPress();
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+        };
+        const onMove = (moveEvent) => {
+            const delta = Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY);
+            if (delta > 6) {
+                cleanup();
+            }
+        };
+        const onUp = () => cleanup();
+
+        longPressTimer = setTimeout(() => {
+            bubble.dataset.longPressed = '1';
+            clearTimeout(bubbleClickTimer);
+            bubbleClickTimer = null;
+            cleanup();
+            void triggerBubbleShortcut('long_press');
+        }, BUBBLE_LONG_PRESS_MS);
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp, { once: true });
+        window.addEventListener('pointercancel', onUp, { once: true });
+    });
+}
+
+async function triggerBubbleShortcut(shortcut) {
+    if (state.settings.preAgentShortcut === shortcut) {
+        const started = await startPreAgentWorkflowFromInput();
+        if (started) {
+            return;
+        }
+    }
+    if (state.settings.postAgentShortcut === shortcut) {
+        await startPostAgentWorkflow();
+    }
+}
+
+async function startPreAgentWorkflowFromInput() {
+    if (!state.settings.preAgentEnabled) {
+        return false;
+    }
+    const textarea = document.querySelector('#send_textarea');
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+        return false;
+    }
+    const message = String(textarea.value || '');
+    if (!message.trim()) {
+        window.toastr?.warning?.(TEXT.preAgentMessageRequired);
+        return false;
+    }
+    if (message.trimStart().startsWith('/')) {
+        return false;
+    }
+    if (!String(state.settings.preAgentProfileId || '').trim()) {
+        window.toastr?.warning?.(TEXT.profileRequired);
+        return false;
+    }
+    if (isPreAgentWorkflowBusy() || isPostAgentWorkflowBusy() || getActiveAgentRun()?.runId) {
+        window.toastr?.warning?.(TEXT.workflowActive);
+        return false;
+    }
+
+    textarea.value = '';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    try {
+        await startPreAgentWorkflow(message, { autoSend: false });
+        return true;
+    } catch (error) {
+        console.error('[AgentWorkspaceFloat] Failed to start pre Agent from shortcut:', error);
+        textarea.value = message;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        window.toastr?.error?.(String(error?.message || error));
+        return false;
+    }
+}
+
 async function updateFontSize(value) {
     const fontSize = Math.min(Math.max(Number(value) || DEFAULT_SETTINGS.fontSize, 11), 24);
     await saveSettings({ fontSize });
@@ -1323,7 +1661,10 @@ async function updateFontSize(value) {
 }
 
 async function preAgentGenerateInterceptor(_chat, _contextSize, abort, type) {
-    if (state.preAgentBypass || !state.settings.preAgentEnabled || type !== 'normal') {
+    if (state.preAgentBypass
+        || !state.settings.preAgentEnabled
+        || !state.settings.preAgentAutomatic
+        || type !== 'normal') {
         return;
     }
 
@@ -1353,7 +1694,7 @@ async function preAgentGenerateInterceptor(_chat, _contextSize, abort, type) {
     abort(true);
     await deleteLastMessage();
     await context.saveChat?.();
-    await startPreAgentWorkflow(String(message.mes || ''));
+    await startPreAgentWorkflow(String(message.mes || ''), { autoSend: true });
 }
 
 async function rejectAdditionalPreAgentMessage(message) {
@@ -1368,7 +1709,7 @@ async function rejectAdditionalPreAgentMessage(message) {
     }
 }
 
-async function startPreAgentWorkflow(originalMessage) {
+async function startPreAgentWorkflow(originalMessage, options = {}) {
     const profileId = String(state.settings.preAgentProfileId || '').trim();
     const presentation = state.settings.preAgentPresentation;
     const context = getContext();
@@ -1388,6 +1729,9 @@ async function startPreAgentWorkflow(originalMessage) {
     state.preAgentLastEventType = '';
     state.preAgentChat = chat;
     state.preAgentOriginalMessage = String(originalMessage || '');
+    state.preAgentAutoSend = options.autoSend !== false;
+    state.preAgentPersistTargetMessageId = findLatestAssistantMessageId(chat);
+    state.preAgentPersistWritePromise = Promise.resolve();
     state.preAgentActiveInvocations.clear();
     state.error = '';
     render();
@@ -1436,6 +1780,7 @@ async function startPreAgentWorkflow(originalMessage) {
             state.preAgentLastEventType = String(event?.type || '');
             updatePreAgentProfileFromEvent(event);
             addRunEvent(event);
+            capturePersistentStateFromEvent('pre', event);
             if (TERMINAL_RUN_EVENTS.has(event?.type)) {
                 void finishPreAgentWorkflow(runId, event.type);
             }
@@ -1532,12 +1877,16 @@ async function finishPreAgentWorkflow(runId, terminalEventType = '') {
         return;
     }
     const unsubscribe = state.preAgentUnsubscribe;
+    const persistWritePromise = state.preAgentPersistWritePromise;
     state.preAgentUnsubscribe = null;
-    state.preAgentRunId = '';
-    state.activeRunId = '';
     state.preAgentStopping = false;
     state.preAgentPhase = workflowPhaseForTerminalEvent(terminalEventType);
     unsubscribe?.();
+    render();
+
+    await persistWritePromise;
+    state.preAgentRunId = '';
+    state.activeRunId = '';
     render();
 
     const contents = await readPreAgentOutputDocuments(runId);
@@ -1572,6 +1921,10 @@ async function completePreAgentInterception(_runId, contents) {
     if (getContext()?.chat !== state.preAgentChat) {
         state.preAgentIntercepting = false;
         state.preAgentChat = null;
+        state.preAgentOriginalMessage = '';
+        state.preAgentAutoSend = false;
+        state.preAgentPersistTargetMessageId = null;
+        state.preAgentPersistWritePromise = Promise.resolve();
         window.toastr?.warning?.(TEXT.preAgentMessageChanged);
         render();
         return;
@@ -1581,14 +1934,18 @@ async function completePreAgentInterception(_runId, contents) {
         state.preAgentOriginalMessage,
         ...contents,
     ].map((part) => String(part || '').trim()).filter(Boolean).join('\n\n');
+    const autoSend = state.preAgentAutoSend;
     state.preAgentIntercepting = false;
     state.preAgentChat = null;
     state.preAgentOriginalMessage = '';
+    state.preAgentAutoSend = false;
+    state.preAgentPersistTargetMessageId = null;
+    state.preAgentPersistWritePromise = Promise.resolve();
     render();
-    setTimeout(() => void resumeInterceptedUserMessage(combined), 0);
+    setTimeout(() => void resumeInterceptedUserMessage(combined, { autoSend }), 0);
 }
 
-async function resumeInterceptedUserMessage(message) {
+async function resumeInterceptedUserMessage(message, options = {}) {
     const textarea = document.querySelector('#send_textarea');
     if (!(textarea instanceof HTMLTextAreaElement)) {
         window.toastr?.error?.(TEXT.preAgentResumeFailed);
@@ -1597,6 +1954,13 @@ async function resumeInterceptedUserMessage(message) {
     const draft = String(textarea.value || '');
     textarea.value = message;
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    if (options.autoSend === false) {
+        if (draft) {
+            textarea.value = [message, draft].filter(Boolean).join('\n\n');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        return;
+    }
     state.preAgentBypass = true;
     try {
         await sendTextareaMessage();
@@ -1636,6 +2000,7 @@ function installPreAgentSendGuard() {
             return;
         }
         if (!state.settings.preAgentEnabled
+            || !state.settings.preAgentAutomatic
             || isPostAgentWorkflowBusy()
             || getActiveAgentRun()?.runId) {
             return;
@@ -1661,7 +2026,7 @@ function installPreAgentSendGuard() {
         textarea.value = '';
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
         afterIntercept?.();
-        void startPreAgentWorkflow(message).catch((error) => {
+        void startPreAgentWorkflow(message, { autoSend: true }).catch((error) => {
             console.error('[AgentWorkspaceFloat] Failed to intercept user message:', error);
             textarea.value = message;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1728,6 +2093,8 @@ async function startPostAgentWorkflow() {
     if (!state.settings.postAgentEnabled || !isLatestChatMessageAiReply()) {
         return;
     }
+    const context = getContext();
+    const chat = context?.chat;
     const profileId = String(state.settings.postAgentProfileId || '').trim();
     const presentation = state.settings.postAgentPresentation;
     if (!profileId) {
@@ -1748,6 +2115,9 @@ async function startPostAgentWorkflow() {
     state.workflowPresentation = presentation;
     state.workflowLastRunId = '';
     state.workflowLastEventType = '';
+    state.workflowChat = chat;
+    state.workflowPersistTargetMessageId = findLatestAssistantMessageId(chat);
+    state.workflowPersistWritePromise = Promise.resolve();
     state.workflowActiveInvocations.clear();
     state.workflowOutputHandledInvocations.clear();
     state.error = '';
@@ -1780,9 +2150,10 @@ async function startPostAgentWorkflow() {
             state.workflowLastEventType = String(event?.type || '');
             updateWorkflowProfileFromEvent(event);
             addRunEvent(event);
+            capturePersistentStateFromEvent('post', event);
             queueProfileOutputDocuments(runId, event);
             if (TERMINAL_RUN_EVENTS.has(event?.type)) {
-                finishPostAgentWorkflow(runId, event.type);
+                void finishPostAgentWorkflow(runId, event.type);
             }
             render();
         }, {
@@ -1813,6 +2184,140 @@ function isLatestChatMessageAiReply(expectedMessageId = null) {
     }
     const latestMessage = chat[latestMessageId];
     return Boolean(latestMessage && !latestMessage.is_user && !latestMessage.is_system);
+}
+
+function findLatestAssistantMessageId(chat) {
+    if (!Array.isArray(chat)) {
+        return null;
+    }
+    for (let index = chat.length - 1; index >= 0; index -= 1) {
+        if (isAssistantChatMessage(chat[index])) {
+            return index;
+        }
+    }
+    return null;
+}
+
+function isAssistantChatMessage(message) {
+    return Boolean(message && typeof message === 'object' && !message.is_user && !message.is_system);
+}
+
+function capturePersistentStateFromEvent(kind, event) {
+    if (event?.type !== 'persistent_changes_committed') {
+        return;
+    }
+
+    const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+    const persistStateId = String(payload.stateId || '').trim();
+    if (!persistStateId) {
+        return;
+    }
+
+    const isPreAgent = kind === 'pre';
+    const runId = String(event.runId || payload.runId || '').trim();
+    const expectedRunId = isPreAgent ? state.preAgentRunId : state.workflowRunId;
+    if (!runId || runId !== expectedRunId) {
+        return;
+    }
+
+    const targetMessageId = isPreAgent
+        ? state.preAgentPersistTargetMessageId
+        : state.workflowPersistTargetMessageId;
+    const expectedChat = isPreAgent ? state.preAgentChat : state.workflowChat;
+    const profileId = isPreAgent
+        ? state.preAgentProfileId || state.preAgentRootProfileId
+        : state.workflowProfileId || state.workflowRootProfileId;
+
+    const writePromise = writePersistentStateMetadataToAssistantMessage({
+        expectedChat,
+        messageId: targetMessageId,
+        runId,
+        profileId,
+        persistStateId,
+        persistBaseStateId: String(payload.baseStateId || '').trim() || null,
+        persistChangeCount: Number(payload.changeCount ?? 0),
+    }).catch((error) => {
+        console.error('[AgentWorkspaceFloat] Failed to write persistent state metadata:', error);
+    });
+    if (isPreAgent) {
+        state.preAgentPersistWritePromise = writePromise;
+    } else {
+        state.workflowPersistWritePromise = writePromise;
+    }
+}
+
+async function writePersistentStateMetadataToAssistantMessage({
+    expectedChat,
+    messageId,
+    runId,
+    profileId,
+    persistStateId,
+    persistBaseStateId,
+    persistChangeCount,
+}) {
+    if (!Number.isInteger(messageId) || messageId < 0 || !persistStateId) {
+        return false;
+    }
+
+    const context = getContext();
+    const chat = context?.chat;
+    if (!Array.isArray(chat) || (expectedChat && chat !== expectedChat) || messageId >= chat.length) {
+        return false;
+    }
+
+    const message = chat[messageId];
+    if (!isAssistantChatMessage(message)) {
+        return false;
+    }
+
+    const previousExtra = message.extra && typeof message.extra === 'object' ? message.extra : {};
+    const previousTauriTavern = previousExtra.tauritavern && typeof previousExtra.tauritavern === 'object'
+        ? previousExtra.tauritavern
+        : {};
+    const previousAgent = previousTauriTavern.agent && typeof previousTauriTavern.agent === 'object'
+        ? previousTauriTavern.agent
+        : {};
+    const changeCount = Number.isFinite(persistChangeCount) ? Math.max(0, Math.trunc(persistChangeCount)) : 0;
+
+    message.extra = {
+        ...previousExtra,
+        tauritavern: {
+            ...previousTauriTavern,
+            agent: {
+                ...previousAgent,
+                version: previousAgent.version ?? 2,
+                persistStateId,
+                persistBaseStateId,
+                persistStateStatus: 'committed',
+                persistChangeCount: changeCount,
+                extensionPersistSource: {
+                    module: MODULE_NAME,
+                    runId,
+                    profileId: String(profileId || '').trim() || null,
+                },
+            },
+        },
+    };
+
+    const swipeId = Number(message.swipe_id);
+    if (Array.isArray(message.swipe_info)
+        && Number.isInteger(swipeId)
+        && swipeId >= 0
+        && message.swipe_info[swipeId]) {
+        message.swipe_info[swipeId].extra = structuredClone(message.extra);
+    }
+
+    if (context.chatMetadata && typeof context.chatMetadata === 'object') {
+        context.chatMetadata.tainted = true;
+    }
+    markWindowedChatDirtyFromIndex(messageId);
+    context.updateMessageBlock?.(messageId, message);
+    const messageUpdatedEvent = context.eventTypes?.MESSAGE_UPDATED;
+    if (messageUpdatedEvent && typeof context.eventSource?.emit === 'function') {
+        await context.eventSource.emit(messageUpdatedEvent, messageId);
+    }
+    await context.saveChat?.();
+    return true;
 }
 
 function subscribeAutomaticPostAgent() {
@@ -1891,6 +2396,424 @@ async function appendProfileOutputDocuments(runId, profileId, mappings) {
         return;
     }
     await appendToLatestChatMessage(contents.join('\n\n'));
+}
+
+async function storeWorldInfoEntriesFromRun(runId) {
+    if (!state.settings.worldInfoStorageEnabled) {
+        return;
+    }
+    const worldName = String(state.settings.worldInfoBookName || '').trim();
+    const paramsPath = normalizeWorkspacePath(state.settings.worldInfoParamsPath || DEFAULT_WORLD_INFO_PARAMS_PATH);
+    if (!worldName) {
+        window.toastr?.warning?.(TEXT.worldInfoBookRequired);
+        return;
+    }
+    if (!paramsPath) {
+        return;
+    }
+
+    const paramsFile = await agentApi().readWorkspaceFile({ runId, path: paramsPath });
+    const records = parseWorldInfoJsonl(String(paramsFile?.text || ''));
+    if (records.length === 0) {
+        return;
+    }
+
+    const data = await loadWorldInfo(worldName);
+    if (!data || !data.entries || typeof data.entries !== 'object') {
+        throw new Error(`World Info "${worldName}" is unavailable.`);
+    }
+
+    const currentPosition = currentChatFloorSwipeInfo();
+    const identifier = currentPosition.identifier;
+    let created = 0;
+    for (const record of records) {
+        const documentPath = normalizeWorkspacePath(record.documentPath);
+        if (!documentPath) {
+            continue;
+        }
+
+        let content = '';
+        try {
+            const documentFile = await agentApi().readWorkspaceFile({ runId, path: documentPath });
+            content = String(documentFile?.text || '');
+        } catch (error) {
+            console.warn(`[AgentWorkspaceFloat] World Info source document is unavailable: ${documentPath}`, error);
+            continue;
+        }
+
+        const entry = createWorldInfoEntry(worldName, data);
+        if (!entry) {
+            continue;
+        }
+        const entryName = `${documentFileName(documentPath)}\u3010${identifier}\u3011 `;
+        entry.comment = entryName;
+        entry.addMemo = true;
+        entry.content = content;
+        applyWorldInfoEntryParams(entry, record.params);
+        created += 1;
+    }
+
+    if (created === 0) {
+        return;
+    }
+
+    const cleanupResult = await cleanupWorldInfoEntriesByRetention(data, worldName, currentPosition.floorId);
+    if (cleanupResult === 'cancelled') {
+        await saveWorldInfo(worldName, data, true);
+        reloadEditor(worldName, false);
+        window.toastr?.success?.(`${TEXT.worldInfoStored}: ${created}`);
+        return;
+    }
+
+    await saveWorldInfo(worldName, data, true);
+    reloadEditor(worldName, false);
+    window.toastr?.success?.(`${TEXT.worldInfoStored}: ${created}`);
+}
+
+async function cleanupWorldInfoEntriesByRetention(data, worldName, currentFloorId) {
+    const retentionLayers = sanitizeNonNegativeInteger(
+        state.settings.worldInfoRetentionLayers,
+        DEFAULT_WORLD_INFO_RETENTION_LAYERS,
+    );
+    const minFloorId = currentFloorId - retentionLayers;
+    const entries = Object.entries(data.entries || {});
+    const recognized = entries
+        .map(([uid, entry]) => ({
+            uid,
+            entry,
+            floorId: worldInfoEntryFloorId(entry),
+        }))
+        .filter((item) => Number.isInteger(item.floorId));
+    const deleting = recognized.filter((item) => item.floorId < minFloorId || item.floorId > currentFloorId);
+    if (deleting.length === 0) {
+        return 'unchanged';
+    }
+
+    if (deleting.length > 5) {
+        const action = await confirmWorldInfoCleanupWithOptionalBackup({
+            worldName,
+            data,
+            deleteCount: deleting.length,
+            currentFloorId,
+            retentionLayers,
+        });
+        if (action === 'cancelled') {
+            return 'cancelled';
+        }
+    }
+
+    for (const item of deleting) {
+        delete data.entries[item.uid];
+    }
+    return 'deleted';
+}
+
+function worldInfoEntryFloorId(entry) {
+    const name = String(entry?.comment || '');
+    const match = name.match(/\u3010(\d+)-\d+\u3011/);
+    if (!match) {
+        return null;
+    }
+    const floorId = Number(match[1]);
+    return Number.isInteger(floorId) ? floorId : null;
+}
+
+async function confirmWorldInfoCleanupWithOptionalBackup({
+    worldName,
+    data,
+    deleteCount,
+    currentFloorId,
+    retentionLayers,
+}) {
+    const message = [
+        TEXT.worldInfoCleanupConfirm,
+        '',
+        `\u4e16\u754c\u4e66\uff1a${worldName}`,
+        `\u5f53\u524d\u5c42\u53f7\uff1a${currentFloorId}`,
+        `\u4fdd\u7559\u5c42\u6570\uff1a${retentionLayers}`,
+        `\u5c06\u5220\u9664\u6761\u76ee\uff1a${deleteCount}`,
+    ].join('<br>');
+    const result = await Popup.show.confirm(TEXT.worldInfoCleanupTitle, message, {
+        okButton: TEXT.worldInfoCleanupDirect,
+        cancelButton: TEXT.worldInfoCleanupCancel,
+        customButtons: [{
+            text: TEXT.worldInfoCleanupBackup,
+            result: POPUP_RESULT.CUSTOM1,
+            icon: 'fa-copy',
+            appendAtEnd: true,
+        }],
+    });
+
+    if (result === POPUP_RESULT.CUSTOM1) {
+        const backupName = await backupWorldInfoBeforeCleanup(worldName, data);
+        window.toastr?.success?.(`${TEXT.worldInfoBackupCreated}: ${backupName}`);
+        return 'backup';
+    }
+    if (result === POPUP_RESULT.AFFIRMATIVE) {
+        return 'delete';
+    }
+    return 'cancelled';
+}
+
+async function backupWorldInfoBeforeCleanup(worldName, data) {
+    const backupName = uniqueWorldInfoBackupName(worldName);
+    await saveWorldInfo(backupName, structuredClone(data), true);
+    await refreshWorldInfoNames();
+    return backupName;
+}
+
+function uniqueWorldInfoBackupName(worldName) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const baseName = `${worldName}-backup-${timestamp}`;
+    const names = new Set([
+        ...(Array.isArray(world_names) ? world_names : []),
+        ...state.worldInfoNames,
+    ]);
+    if (!names.has(baseName)) {
+        return baseName;
+    }
+    let index = 2;
+    while (names.has(`${baseName}-${index}`)) {
+        index += 1;
+    }
+    return `${baseName}-${index}`;
+}
+
+function parseWorldInfoJsonl(text) {
+    const records = [];
+    const lines = String(text || '').split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index].trim();
+        if (!line) {
+            continue;
+        }
+        try {
+            const value = JSON.parse(line);
+            const record = normalizeWorldInfoRecord(value);
+            if (record) {
+                records.push(record);
+            }
+        } catch (error) {
+            console.warn(`[AgentWorkspaceFloat] Invalid World Info JSONL line ${index + 1}:`, error);
+        }
+    }
+    return records;
+}
+
+function normalizeWorldInfoRecord(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const pathKeys = ['\u6587\u6863\u8def\u5f84', 'documentPath', 'document_path', 'docPath', 'doc_path', 'filePath', 'file_path', 'path'];
+    const documentPath = firstRecordValue(value, pathKeys);
+    const nestedParams = value.params || value.parameters || value['\u53c2\u6570'];
+    const params = {};
+
+    if (nestedParams && typeof nestedParams === 'object' && !Array.isArray(nestedParams)) {
+        Object.assign(params, nestedParams);
+    }
+    const ignored = new Set([
+        ...pathKeys,
+        'params',
+        'parameters',
+        '\u53c2\u6570',
+        'name',
+        'entryName',
+        'comment',
+        '\u6761\u76ee\u540d\u79f0',
+        'content',
+        '\u5185\u5bb9',
+    ]);
+    for (const [key, fieldValue] of Object.entries(value)) {
+        if (!ignored.has(key)) {
+            params[key] = fieldValue;
+        }
+    }
+
+    return {
+        documentPath: String(documentPath || '').trim(),
+        params,
+    };
+}
+
+function currentChatFloorSwipeInfo() {
+    const chat = getContext()?.chat;
+    if (!Array.isArray(chat) || chat.length === 0) {
+        return { floorId: 0, swipeId: 0, identifier: '0-0' };
+    }
+    const floorId = chat.length - 1;
+    const latestMessage = chat[floorId];
+    const swipeId = Number(latestMessage?.swipe_id);
+    const normalizedSwipeId = Number.isInteger(swipeId) && swipeId >= 0 ? swipeId : 0;
+    return {
+        floorId,
+        swipeId: normalizedSwipeId,
+        identifier: `${floorId}-${normalizedSwipeId}`,
+    };
+}
+
+function firstRecordValue(record, keys) {
+    for (const key of keys) {
+        if (record[key] != null) {
+            return record[key];
+        }
+    }
+    return '';
+}
+
+function applyWorldInfoEntryParams(entry, params) {
+    if (!params || typeof params !== 'object') {
+        return;
+    }
+    for (const [rawKey, rawValue] of Object.entries(params)) {
+        const key = normalizeWorldInfoParamKey(rawKey);
+        if (!key || key === 'comment' || key === 'content' || key === 'uid') {
+            continue;
+        }
+        if (key === 'characterFilterNames' || key === 'characterFilterTags' || key === 'characterFilterExclude') {
+            applyCharacterFilterParam(entry, key, rawValue);
+            continue;
+        }
+        if (key === 'enabled') {
+            entry.disable = !parseBooleanLike(rawValue, true);
+            continue;
+        }
+        const definition = newWorldInfoEntryDefinition[key];
+        if (!definition || definition.excludeFromTemplate) {
+            continue;
+        }
+        entry[key] = coerceWorldInfoParamValue(key, rawValue, definition);
+    }
+}
+
+function normalizeWorldInfoParamKey(key) {
+    const aliases = {
+        '\u89e6\u53d1\u8bcd': 'key',
+        '\u4e3b\u89e6\u53d1\u8bcd': 'key',
+        keys: 'key',
+        primaryKeys: 'key',
+        '\u6b21\u7ea7\u89e6\u53d1\u8bcd': 'keysecondary',
+        '\u9644\u52a0\u89e6\u53d1\u8bcd': 'keysecondary',
+        secondaryKeys: 'keysecondary',
+        keySecondary: 'keysecondary',
+        enabled: 'enabled',
+        '\u542f\u7528': 'enabled',
+        '\u5e38\u9a7b': 'constant',
+        '\u7eff\u706f': 'constant',
+        '\u5411\u91cf\u5316': 'vectorized',
+        '\u84dd\u706f': 'vectorized',
+        '\u7981\u7528': 'disable',
+        '\u987a\u5e8f': 'order',
+        '\u4f4d\u7f6e': 'position',
+        '\u6982\u7387': 'probability',
+        '\u4f7f\u7528\u6982\u7387': 'useProbability',
+        '\u5206\u7ec4': 'group',
+        '\u5206\u7ec4\u6743\u91cd': 'groupWeight',
+        '\u626b\u63cf\u6df1\u5ea6': 'scanDepth',
+        '\u533a\u5206\u5927\u5c0f\u5199': 'caseSensitive',
+        '\u5168\u8bcd\u5339\u914d': 'matchWholeWords',
+        '\u89d2\u8272\u8fc7\u6ee4': 'characterFilterNames',
+        '\u89d2\u8272\u6807\u7b7e\u8fc7\u6ee4': 'characterFilterTags',
+        '\u6392\u9664\u89d2\u8272\u8fc7\u6ee4': 'characterFilterExclude',
+    };
+    return aliases[key] || key;
+}
+
+function coerceWorldInfoParamValue(key, value, definition) {
+    if (key === 'position') {
+        return normalizeWorldInfoPosition(value);
+    }
+    if (definition.type === 'array') {
+        const values = Array.isArray(value)
+            ? value
+            : String(value || '').split(/[,，]/);
+        return values.map((item) => String(item || '').trim()).filter(Boolean);
+    }
+    if (definition.type === 'boolean' || definition.type === 'boolean?') {
+        if (value === null && definition.type === 'boolean?') {
+            return null;
+        }
+        return parseBooleanLike(value, Boolean(definition.default));
+    }
+    if (definition.type === 'number' || definition.type === 'number?' || definition.type === 'enum') {
+        if ((value === null || value === '') && definition.type === 'number?') {
+            return null;
+        }
+        const number = Number(value);
+        return Number.isFinite(number) ? number : definition.default;
+    }
+    return String(value ?? definition.default ?? '');
+}
+
+function normalizeWorldInfoPosition(value) {
+    const positions = {
+        before: 0,
+        before_char: 0,
+        '\u89d2\u8272\u524d': 0,
+        after: 1,
+        after_char: 1,
+        '\u89d2\u8272\u540e': 1,
+        an_top: 2,
+        '\u4f5c\u8005\u6ce8\u91ca\u9876\u90e8': 2,
+        an_bottom: 3,
+        '\u4f5c\u8005\u6ce8\u91ca\u5e95\u90e8': 3,
+        depth: 4,
+        at_depth: 4,
+        '\u6df1\u5ea6': 4,
+        em_top: 5,
+        '\u793a\u4f8b\u9876\u90e8': 5,
+        em_bottom: 6,
+        '\u793a\u4f8b\u5e95\u90e8': 6,
+        outlet: 7,
+    };
+    const normalized = String(value ?? '').trim().toLowerCase();
+    if (Object.hasOwn(positions, normalized)) {
+        return positions[normalized];
+    }
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+}
+
+function parseBooleanLike(value, fallback = false) {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'number') {
+        return value !== 0;
+    }
+    const normalized = String(value ?? '').trim().toLowerCase();
+    if (['true', '1', 'yes', 'on', '\u662f', '\u5f00', '\u542f\u7528'].includes(normalized)) {
+        return true;
+    }
+    if (['false', '0', 'no', 'off', '\u5426', '\u5173', '\u7981\u7528'].includes(normalized)) {
+        return false;
+    }
+    return fallback;
+}
+
+function applyCharacterFilterParam(entry, key, value) {
+    entry.characterFilter ||= {
+        isExclude: false,
+        names: [],
+        tags: [],
+    };
+    if (key === 'characterFilterNames') {
+        entry.characterFilter.names = Array.isArray(value)
+            ? value.map((item) => String(item || '').trim()).filter(Boolean)
+            : String(value || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+    } else if (key === 'characterFilterTags') {
+        entry.characterFilter.tags = Array.isArray(value)
+            ? value.map((item) => String(item || '').trim()).filter(Boolean)
+            : String(value || '').split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+    } else if (key === 'characterFilterExclude') {
+        entry.characterFilter.isExclude = parseBooleanLike(value, false);
+    }
+}
+
+function documentFileName(path) {
+    const normalized = normalizeWorkspacePath(path);
+    const filename = normalized.split('/').filter(Boolean).pop() || normalized || 'document';
+    return filename.replace(/\.[^/.]+$/, '') || filename;
 }
 
 async function appendToLatestChatMessage(content) {
@@ -2011,17 +2934,30 @@ async function stopPostAgentWorkflow() {
     }
 }
 
-function finishPostAgentWorkflow(runId, terminalEventType = '') {
+async function finishPostAgentWorkflow(runId, terminalEventType = '') {
     if (runId !== state.workflowRunId) {
         return;
     }
     const unsubscribe = state.workflowUnsubscribe;
+    const persistWritePromise = state.workflowPersistWritePromise;
     state.workflowUnsubscribe = null;
-    state.workflowRunId = '';
-    state.activeRunId = '';
     state.workflowStopping = false;
     state.workflowPhase = workflowPhaseForTerminalEvent(terminalEventType);
     unsubscribe?.();
+    render();
+
+    await persistWritePromise;
+    state.workflowRunId = '';
+    state.activeRunId = '';
+    state.workflowChat = null;
+    state.workflowPersistTargetMessageId = null;
+    state.workflowPersistWritePromise = Promise.resolve();
+    render();
+
+    void storeWorldInfoEntriesFromRun(runId).catch((error) => {
+        console.error('[AgentWorkspaceFloat] Failed to store World Info entries:', error);
+        window.toastr?.error?.(`${TEXT.worldInfoStoreFailed} ${String(error?.message || error)}`);
+    });
 }
 
 function workflowPhaseForTerminalEvent(eventType) {
@@ -2446,6 +3382,7 @@ async function init() {
     mountDom();
     state.unsubscribers.push(installPreAgentSendGuard());
     await refreshAgentProfiles();
+    await refreshWorldInfoNames();
     state.unsubscribers.push(subscribeAgentProfilesChanged(() => {
         void refreshAgentProfiles();
     }));
