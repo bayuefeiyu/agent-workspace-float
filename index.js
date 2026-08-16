@@ -20,9 +20,9 @@ import {
 } from '/scripts/popup.js';
 import {
     deleteLastMessage,
-    markWindowedChatDirtyFromIndex,
     sendTextareaMessage,
 } from '/script.js';
+import * as sillyTavernScript from '/script.js';
 import {
     createWorldInfoEntry,
     loadWorldInfo,
@@ -52,6 +52,13 @@ const TERMINAL_INVOCATION_EVENTS = new Set([
     'agent_invocation_cancelled',
     'agent_invocation_transferred',
 ]);
+
+function markLegacyWindowedChatDirtyFromIndex(messageId) {
+    const markDirty = sillyTavernScript.markWindowedChatDirtyFromIndex;
+    if (typeof markDirty === 'function') {
+        markDirty(messageId);
+    }
+}
 
 const TEXT = Object.freeze({
     title: 'Agent \u5de5\u4f5c\u533a',
@@ -2310,7 +2317,7 @@ async function writePersistentStateMetadataToAssistantMessage({
     if (context.chatMetadata && typeof context.chatMetadata === 'object') {
         context.chatMetadata.tainted = true;
     }
-    markWindowedChatDirtyFromIndex(messageId);
+    markLegacyWindowedChatDirtyFromIndex(messageId);
     context.updateMessageBlock?.(messageId, message);
     const messageUpdatedEvent = context.eventTypes?.MESSAGE_UPDATED;
     if (messageUpdatedEvent && typeof context.eventSource?.emit === 'function') {
@@ -2844,7 +2851,7 @@ async function appendToLatestChatMessage(content) {
     if (context.chatMetadata && typeof context.chatMetadata === 'object') {
         context.chatMetadata.tainted = true;
     }
-    markWindowedChatDirtyFromIndex(messageId);
+    markLegacyWindowedChatDirtyFromIndex(messageId);
     context.updateMessageBlock(messageId, message);
     const messageUpdatedEvent = context.eventTypes?.MESSAGE_UPDATED;
     if (messageUpdatedEvent && typeof context.eventSource?.emit === 'function') {
